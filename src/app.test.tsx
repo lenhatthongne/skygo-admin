@@ -12,12 +12,10 @@ vi.mock('@umijs/max', () => ({
 vi.mock('@/skygo/service', () => ({ authService: { me: mocks.me } }));
 vi.mock('@/components', () => ({
   AvatarDropdown: () => null,
-  DocLink: () => null,
   ErrorBoundary: ({ children }: any) => children,
   Footer: () => null,
   LangDropdown: () => null,
   OfflineBanner: () => null,
-  VersionDropdown: () => null,
 }));
 vi.mock('@ant-design/pro-components', () => ({ SettingDrawer: () => null }));
 vi.mock('./requestErrorConfig', () => ({ errorConfig: {} }));
