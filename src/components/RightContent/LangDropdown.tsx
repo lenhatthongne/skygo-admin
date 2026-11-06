@@ -7,6 +7,7 @@ import HeaderDropdown from '../HeaderDropdown';
 import useHeaderActionStyles from './style';
 
 const localeLabelMap: Record<string, { emoji: string; label: string }> = {
+  'vi-VN': { emoji: '🇻🇳', label: 'Tiếng Việt' },
   'zh-CN': { emoji: '🇨🇳', label: '简体中文' },
   'zh-TW': { emoji: '🇭🇰', label: '繁體中文' },
   'en-US': { emoji: '🇺🇸', label: 'English' },

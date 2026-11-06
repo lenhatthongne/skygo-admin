@@ -3,6 +3,11 @@ import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  define: {
+    'process.env.SKYGO_API_BASE_URL': JSON.stringify(
+      'http://localhost:8080/api',
+    ),
+  },
   plugins: [
     {
       name: 'vitest-md-raw-loader',
@@ -17,6 +22,9 @@ export default defineConfig({
       },
     },
   ],
+  // Umi's package entry is a Node CLI; runtime exports are provided by Umi
+  // and mocked by these browser tests, so do not prebundle the CLI.
+  optimizeDeps: { exclude: ['@umijs/max'] },
   resolve: {
     alias: {
       '@': join(__dirname, 'src'),
@@ -27,7 +35,11 @@ export default defineConfig({
   test: {
     browser: {
       enabled: true,
-      provider: playwright(),
+      provider: playwright({
+        launchOptions: process.env.PLAYWRIGHT_CHANNEL
+          ? { channel: process.env.PLAYWRIGHT_CHANNEL }
+          : {},
+      }),
       headless: true,
       instances: [{ browser: 'chromium' }],
     },

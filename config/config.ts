@@ -43,6 +43,7 @@ export default defineConfig({
    * @doc https://umijs.org/docs/api/config#hash
    */
   hash: true,
+  outputPath: process.env.NODE_ENV === 'development' ? '.dev-dist' : 'dist',
 
   publicPath: PUBLIC_PATH,
 
@@ -114,7 +115,7 @@ export default defineConfig({
    * @name layout 插件
    * @doc https://umijs.org/docs/max/layout-menu
    */
-  title: 'Ant Design Pro',
+  title: 'SkyGo Admin',
   layout: {
     locale: true,
     ...defaultSettings,
@@ -134,10 +135,10 @@ export default defineConfig({
    */
   locale: {
     // default zh-CN
-    default: 'zh-CN',
+    default: 'vi-VN',
     antd: true,
     // default true, when it is true, will use `navigator.language` overwrite default
-    baseNavigator: true,
+    baseNavigator: false,
   },
   /**
    * @name antd 插件
@@ -210,10 +211,7 @@ export default defineConfig({
 
   tailwindcss: {},
 
-  mock: {
-    include: ['src/pages/**/_mock.ts'],
-    exclude: ['mock/requestRecord.mock.js'],
-  },
+  mock: false,
   utoopack: {
     module: {
       rules: {
@@ -224,14 +222,24 @@ export default defineConfig({
       },
     },
     devServer: {
-      dynamicHmrChunkLists: true,
-      lazyDynamicImports: true,
+      dynamicHmrChunkLists: false,
+      // Compile route chunks before serving them so first navigation does not
+      // depend on on-demand compilation after an HMR/restart.
+      lazyDynamicImports: false,
     },
   },
   requestRecord: {},
   exportStatic: {},
   define: {
     'process.env.CI': process.env.CI,
+    // An explicit SKYGO_API_BASE_URL always wins. Otherwise `max dev` talks to the local backend and
+    // `max build` (what gets deployed) talks to the hosted one, so a rebuilt admin never ships
+    // pointing at the developer's own localhost.
+    'process.env.SKYGO_API_BASE_URL':
+      process.env.SKYGO_API_BASE_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://skygo-backend.onrender.com/api'
+        : 'http://localhost:8080/api'),
     'process.env.COMMIT_HASH': commitHash,
     __APP_VERSION__: require('./../package.json').version,
     __UMI_VERSION__: require('@umijs/max/package.json').version,

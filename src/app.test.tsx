@@ -1,27 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock all heavy dependencies before importing app
-const mockReplace = vi.fn();
-const mockHistory = {
-  location: {
-    pathname: '/welcome',
-    search: '',
-    hash: '',
-  },
-  replace: mockReplace,
-};
-
-const mockQueryCurrentUser = vi.fn();
-
+const mocks = vi.hoisted(() => ({
+  replace: vi.fn(),
+  me: vi.fn(),
+  location: { pathname: '/overview', search: '', hash: '' },
+}));
 vi.mock('@umijs/max', () => ({
-  history: mockHistory,
+  history: { location: mocks.location, replace: mocks.replace },
   Link: ({ children }: any) => children,
 }));
-
-vi.mock('@/services/ant-design-pro/api', () => ({
-  currentUser: mockQueryCurrentUser,
-}));
-
+vi.mock('@/skygo/service', () => ({ authService: { me: mocks.me } }));
 vi.mock('@/components', () => ({
   AvatarDropdown: () => null,
   DocLink: () => null,
@@ -31,116 +19,50 @@ vi.mock('@/components', () => ({
   OfflineBanner: () => null,
   VersionDropdown: () => null,
 }));
+vi.mock('@ant-design/pro-components', () => ({ SettingDrawer: () => null }));
+vi.mock('./requestErrorConfig', () => ({ errorConfig: {} }));
 
-vi.mock('@ant-design/pro-components', () => ({
-  SettingDrawer: () => null,
-}));
+import { getInitialState } from './app';
+import { clearSession, getToken, setToken } from './skygo/session';
 
-vi.mock('@ant-design/icons', () => ({
-  LinkOutlined: () => null,
-}));
-
-vi.mock('./requestErrorConfig', () => ({
-  errorConfig: {},
-}));
-
-vi.mock('../config/defaultSettings', () => ({
-  default: { navTheme: 'light' },
-}));
-
-describe('app getInitialState', () => {
+const user = {
+  id: 1,
+  fullName: 'Admin',
+  email: 'test@example.com',
+  phone: '',
+  role: 'ADMIN',
+  emailVerified: true,
+};
+describe('SkyGo initial state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockHistory.location = {
-      pathname: '/welcome',
+    clearSession();
+    Object.assign(mocks.location, {
+      pathname: '/overview',
       search: '',
       hash: '',
-    };
-  });
-
-  it('should fetch currentUser when not on login page', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockResolvedValue({
-      data: {
-        name: 'Test User',
-        access: 'admin',
-      },
     });
-
-    const state = await getInitialState();
-
-    expect(mockQueryCurrentUser).toHaveBeenCalled();
-    expect(state.currentUser).toEqual({
-      name: 'Test User',
-      access: 'admin',
-    });
-    expect(state.settingDrawerOpen).toBe(false);
-    expect(state.fetchUserInfo).toBeDefined();
   });
-
-  it('should redirect to login when currentUser fetch fails (401)', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockRejectedValue(new Error('401 Unauthorized'));
-
+  it('redirects without issuing a sample currentUser request when there is no token', async () => {
     const state = await getInitialState();
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      expect.stringContaining('/user/login?redirect='),
-    );
     expect(state.currentUser).toBeUndefined();
+    expect(mocks.me).not.toHaveBeenCalled();
+    expect(mocks.replace).toHaveBeenCalled();
   });
-
-  it('should not fetch currentUser on login page', async () => {
-    const { getInitialState } = await import('./app');
-    mockHistory.location = {
-      pathname: '/user/login',
-      search: '',
-      hash: '',
-    };
-
-    const state = await getInitialState();
-
-    expect(mockQueryCurrentUser).not.toHaveBeenCalled();
-    expect(state.currentUser).toBeUndefined();
-    expect(state.fetchUserInfo).toBeDefined();
+  it('loads the direct auth/me ADMIN response', async () => {
+    setToken('test');
+    mocks.me.mockResolvedValue(user);
+    expect((await getInitialState()).currentUser).toEqual(user);
   });
-
-  it('should encode redirect path correctly on 401', async () => {
-    const { getInitialState } = await import('./app');
-    mockHistory.location = {
-      pathname: '/admin/users',
-      search: '?page=2',
-      hash: '#section',
-    };
-    mockQueryCurrentUser.mockRejectedValue(new Error('401'));
-
+  it('clears CUSTOMER sessions and redirects', async () => {
+    setToken('test');
+    mocks.me.mockResolvedValue({ ...user, role: 'CUSTOMER' });
+    expect((await getInitialState()).currentUser).toBeUndefined();
+    expect(getToken()).toBeUndefined();
+  });
+  it('does not request me on login', async () => {
+    mocks.location.pathname = '/user/login';
     await getInitialState();
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      `/user/login?redirect=${encodeURIComponent('/admin/users?page=2#section')}`,
-    );
-  });
-
-  it('should include default settings in initial state', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockResolvedValue({
-      data: { name: 'User' },
-    });
-
-    const state = await getInitialState();
-
-    expect(state.settings).toEqual({ navTheme: 'light' });
-  });
-
-  it('fetchUserInfo should return user data on success', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockResolvedValue({
-      data: { name: 'Fetched User', access: 'user' },
-    });
-
-    const state = await getInitialState();
-
-    const user = await state.fetchUserInfo?.();
-    expect(user).toEqual({ name: 'Fetched User', access: 'user' });
+    expect(mocks.me).not.toHaveBeenCalled();
   });
 });

@@ -55,3 +55,5 @@ requestRecord.mock.js
 
 .vitest
 e2e-out
+# Isolated development assets
+.dev-dist/

@@ -1,274 +1,162 @@
-import {
-  AlipayCircleOutlined,
-  LockOutlined,
-  MobileOutlined,
-  TaobaoCircleOutlined,
-  UserOutlined,
-  WeiboCircleOutlined,
-} from '@ant-design/icons';
-import {
-  LoginForm,
-  ProFormCaptcha,
-  ProFormCheckbox,
-  ProFormText,
-} from '@ant-design/pro-components';
-import {
-  FormattedMessage,
-  Helmet,
-  SelectLang,
-  useIntl,
-  useModel,
-} from '@umijs/max';
-import { Alert, App, Button, Tabs } from 'antd';
+import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { LoginForm, ProFormText } from '@ant-design/pro-components';
+import { history, useModel } from '@umijs/max';
+import { Alert, App, Button, Form, Input, Space } from 'antd';
 import { createStyles } from 'antd-style';
-import React, { startTransition, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Footer } from '@/components';
-import { login } from '@/services/ant-design-pro/api';
-import { getFakeCaptcha } from '@/services/ant-design-pro/login';
-import Settings from '../../../../config/defaultSettings';
+import { problemOf } from '@/requestErrorConfig';
+import { authService } from '@/skygo/service';
+import { clearSession, safeRedirect, setToken } from '@/skygo/session';
+import type { Challenge } from '@/skygo/types';
+import { ApiError, applyFieldErrors, useText } from '@/skygo/ui';
 
-/**
- * Validate redirect URL to prevent open redirect attacks.
- * Only allow same-origin relative paths starting with '/'.
- */
-const getSafeRedirectUrl = (redirect: string | null): string => {
-  if (!redirect?.startsWith('/')) return '/';
-
-  if (redirect.startsWith('//')) return '/';
-
-  try {
-    const parsed = new URL(redirect, window.location.origin);
-    if (parsed.origin !== window.location.origin) return '/';
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return '/';
-  }
-};
-
-const useStyles = createStyles(({ token }) => {
-  return {
-    action: {
-      marginLeft: '8px',
-      color: 'rgba(0, 0, 0, 0.2)',
-      fontSize: '24px',
-      verticalAlign: 'middle',
-      cursor: 'pointer',
-      transition: 'color 0.3s',
-      '&:hover': {
-        color: token.colorPrimaryActive,
-      },
-    },
-    lang: {
-      width: 42,
-      height: 42,
-      lineHeight: '42px',
-      position: 'fixed',
-      right: 16,
-      borderRadius: token.borderRadius,
-      ':hover': {
-        backgroundColor: token.colorBgTextHover,
-      },
-    },
-    container: {
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      overflow: 'auto',
-      backgroundImage:
-        "url('https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/V-_oS6r-i7wAAAAAAAAAAAAAFl94AQBr')",
-      backgroundSize: '100% 100%',
-    },
-  };
-});
-
-const ActionIcons = () => {
+const useStyles = createStyles(() => ({
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '100vh',
+    overflow: 'auto',
+    backgroundImage:
+      "url('https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/V-_oS6r-i7wAAAAAAAAAAAAAFl94AQBr')",
+    backgroundSize: '100% 100%',
+  },
+  content: { flex: 1, padding: '48px 16px' },
+}));
+export default function Login() {
   const { styles } = useStyles();
-
-  return (
-    <>
-      <AlipayCircleOutlined
-        key="AlipayCircleOutlined"
-        className={styles.action}
-      />
-      <TaobaoCircleOutlined
-        key="TaobaoCircleOutlined"
-        className={styles.action}
-      />
-      <WeiboCircleOutlined
-        key="WeiboCircleOutlined"
-        className={styles.action}
-      />
-    </>
-  );
-};
-
-const Lang = () => {
-  const { styles } = useStyles();
-
-  return (
-    <div className={styles.lang} data-lang>
-      {SelectLang && <SelectLang />}
-    </div>
-  );
-};
-
-const LoginMessage: React.FC<{
-  content: string;
-}> = ({ content }) => {
-  return (
-    <Alert
-      style={{
-        marginBottom: 24,
-      }}
-      title={content}
-      type="error"
-      showIcon
-    />
-  );
-};
-
-const Login: React.FC = () => {
-  const [userLoginState, setUserLoginState] = useState<API.LoginResult>({});
-  const [type, setType] = useState<string>('account');
-  const { initialState, setInitialState } = useModel('@@initialState');
-  const { styles } = useStyles();
+  const t = useText();
   const { message } = App.useApp();
-  const intl = useIntl();
-
-  const fetchUserInfo = async () => {
-    const userInfo = await initialState?.fetchUserInfo?.();
-    if (userInfo) {
-      startTransition(() => {
-        setInitialState((s) => ({
-          ...s,
-          currentUser: userInfo,
-        }));
-      });
-    }
+  const { setInitialState } = useModel('@@initialState');
+  const [form] = Form.useForm();
+  const [challenge, setChallenge] = useState<Challenge>();
+  const [error, setError] = useState<unknown>();
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const [resendAt, setResendAt] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const remaining = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const locked = Math.max(0, Math.ceil((lockedUntil - now) / 1000));
+  const acceptChallenge = (next: Challenge) => {
+    setChallenge(next);
+    form.setFieldValue('code', '');
+    form.setFieldValue('password', '');
+    setResendAt(Date.now() + next.resendAfterSeconds * 1000);
+    setNow(Date.now());
   };
-
-  const handleSubmit = async (values: API.LoginParams) => {
+  const run = async (task: () => Promise<void>) => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError(undefined);
     try {
-      // 登录
-      const msg = await login({ ...values, type });
-      if (msg.status === 'ok') {
-        const defaultLoginSuccessMessage = intl.formatMessage({
-          id: 'pages.login.success',
-          defaultMessage: '登录成功！',
-        });
-        message.success(defaultLoginSuccessMessage);
-        await fetchUserInfo();
-        const urlParams = new URL(window.location.href).searchParams;
-        const redirectUrl = getSafeRedirectUrl(urlParams.get('redirect'));
-        window.location.href = redirectUrl;
-        return;
+      await task();
+    } catch (e) {
+      clearSession();
+      setError(e);
+      applyFieldErrors(form, e);
+      const wait = problemOf(e).retryAfterSeconds;
+      if (wait) {
+        setLockedUntil(Date.now() + wait * 1000);
+        setResendAt(Date.now() + wait * 1000);
+        setNow(Date.now());
       }
-      // 如果失败去设置用户错误信息
-      setUserLoginState(msg);
-    } catch {
-      const defaultLoginFailureMessage = intl.formatMessage({
-        id: 'pages.login.failure',
-        defaultMessage: '登录失败，请重试！',
-      });
-      message.error(defaultLoginFailureMessage);
+    } finally {
+      pending.current = false;
+      setBusy(false);
     }
   };
-  const { status, type: loginType } = userLoginState;
-
   return (
     <div className={styles.container}>
-      <Helmet>
-        <title>
-          {intl.formatMessage({
-            id: 'menu.login',
-            defaultMessage: '登录页',
-          })}
-          {Settings.title && ` - ${Settings.title}`}
-        </title>
-      </Helmet>
-      <Lang />
-      <div
-        style={{
-          flex: '1',
-          padding: '32px 0',
-        }}
-      >
+      <div className={styles.content}>
         <LoginForm
-          contentStyle={{
-            minWidth: 280,
-            maxWidth: '75vw',
+          form={form}
+          title="SkyGo Admin"
+          subTitle={t('login.subtitle', 'Quản trị hệ thống đặt vé SkyGo')}
+          disabled={busy || locked > 0}
+          submitter={{
+            searchConfig: {
+              submitText: challenge
+                ? t('login.verify', 'Xác thực OTP')
+                : t('login.send', 'Đăng nhập và gửi OTP'),
+            },
+            submitButtonProps: { loading: busy, disabled: locked > 0 },
           }}
-          logo={<img alt="logo" src="/logo.svg" />}
-          title="Ant Design"
-          subTitle={intl.formatMessage({
-            id: 'pages.layouts.userLayout.title',
-          })}
-          initialValues={{
-            autoLogin: true,
-          }}
-          actions={[
-            <FormattedMessage
-              key="loginWith"
-              id="pages.login.loginWith"
-              defaultMessage="其他登录方式"
-            />,
-            <ActionIcons key="icons" />,
-          ]}
           onFinish={async (values) => {
-            await handleSubmit(values as API.LoginParams);
+            await run(async () => {
+              if (!challenge) {
+                acceptChallenge(
+                  await authService.login({
+                    email: values.email,
+                    password: values.password,
+                  }),
+                );
+                return;
+              }
+              if (challenge.purpose === 'REGISTER') {
+                await authService.registerVerify(
+                  challenge.challengeId,
+                  values.code,
+                );
+                setChallenge(undefined);
+                form.resetFields(['code', 'password']);
+                message.success(
+                  t(
+                    'login.registered',
+                    'Email đã xác thực. Đăng nhập lại để nhận OTP LOGIN mới.',
+                  ),
+                );
+                return;
+              }
+              const result = await authService.verify(
+                challenge.challengeId,
+                values.code,
+              );
+              if (result.role !== 'ADMIN' || result.user.role !== 'ADMIN')
+                throw { response: { data: { code: 'FORBIDDEN' } } };
+              setToken(result.accessToken);
+              const user = await authService.me();
+              if (user.role !== 'ADMIN')
+                throw { response: { data: { code: 'FORBIDDEN' } } };
+              await setInitialState((s) => ({ ...s, currentUser: user }));
+              history.replace(
+                safeRedirect(
+                  new URLSearchParams(window.location.search).get('redirect'),
+                ),
+              );
+            });
+            return false;
           }}
         >
-          <Tabs
-            activeKey={type}
-            onChange={setType}
-            centered
-            items={[
-              {
-                key: 'account',
-                label: intl.formatMessage({
-                  id: 'pages.login.accountLogin.tab',
-                  defaultMessage: '账户密码登录',
-                }),
-              },
-              {
-                key: 'mobile',
-                label: intl.formatMessage({
-                  id: 'pages.login.phoneLogin.tab',
-                  defaultMessage: '手机号登录',
-                }),
-              },
-            ]}
-          />
-
-          {status === 'error' && loginType === 'account' && (
-            <LoginMessage
-              content={intl.formatMessage({
-                id: 'pages.login.accountLogin.errorMessage',
-                defaultMessage: '账户或密码错误(admin/ant.design)',
-              })}
+          <ApiError error={error} />
+          {locked > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              title={`${t('login.wait', 'Vui lòng chờ')} ${locked}s`}
             />
           )}
-          {type === 'account' && (
+          {!challenge ? (
             <>
               <ProFormText
-                name="username"
+                name="email"
                 fieldProps={{
                   size: 'large',
                   prefix: <UserOutlined />,
+                  autoComplete: 'username',
+                  maxLength: 255,
                 }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.username.placeholder',
-                  defaultMessage: '用户名: admin or user',
-                })}
+                placeholder="Email"
                 rules={[
                   {
                     required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.username.required"
-                        defaultMessage="请输入用户名!"
-                      />
-                    ),
+                    type: 'email',
+                    message: t('login.email', 'Nhập email hợp lệ'),
                   },
                 ]}
               />
@@ -277,139 +165,80 @@ const Login: React.FC = () => {
                 fieldProps={{
                   size: 'large',
                   prefix: <LockOutlined />,
+                  autoComplete: 'current-password',
+                  maxLength: 72,
                 }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.password.placeholder',
-                  defaultMessage: '密码: ant.design',
-                })}
+                placeholder={t('login.password', 'Mật khẩu')}
                 rules={[
                   {
                     required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.password.required"
-                        defaultMessage="请输入密码！"
-                      />
-                    ),
+                    message: t('login.passwordRequired', 'Nhập mật khẩu'),
                   },
                 ]}
               />
             </>
-          )}
-
-          {status === 'error' && loginType === 'mobile' && (
-            <LoginMessage content="验证码错误" />
-          )}
-          {type === 'mobile' && (
-            <>
-              <ProFormText
-                fieldProps={{
-                  size: 'large',
-                  prefix: <MobileOutlined />,
-                }}
-                name="mobile"
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.phoneNumber.placeholder',
-                  defaultMessage: '手机号',
-                })}
+          ) : (
+            <Space orientation="vertical" style={{ width: '100%' }}>
+              <Alert
+                type="info"
+                title={`${challenge.purpose === 'REGISTER' ? t('login.registration', 'Xác thực email đăng ký') : t('login.otpSent', 'OTP đăng nhập đã gửi đến')} ${challenge.email}`}
+                description={`${t('login.expires', 'Hết hạn lúc')} ${new Date(challenge.expiresAt).toLocaleTimeString('vi-VN')}`}
+              />
+              {now >= Date.parse(challenge.expiresAt) && (
+                <Alert
+                  type="warning"
+                  title={t(
+                    'login.expired',
+                    'Mã đã hết hạn. Vui lòng gửi lại OTP.',
+                  )}
+                />
+              )}
+              <Form.Item
+                name="code"
+                label="OTP"
                 rules={[
                   {
                     required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.phoneNumber.required"
-                        defaultMessage="请输入手机号！"
-                      />
-                    ),
-                  },
-                  {
-                    pattern: /^1\d{10}$/,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.phoneNumber.invalid"
-                        defaultMessage="手机号格式错误！"
-                      />
-                    ),
+                    pattern: /^\d{6}$/,
+                    message: t('login.code', 'Nhập đúng 6 chữ số'),
                   },
                 ]}
-              />
-              <ProFormCaptcha
-                fieldProps={{
-                  size: 'large',
-                  prefix: <LockOutlined />,
-                }}
-                captchaProps={{
-                  size: 'large',
-                }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.captcha.placeholder',
-                  defaultMessage: '请输入验证码',
-                })}
-                captchaTextRender={(timing, count) => {
-                  if (timing) {
-                    return `${count} ${intl.formatMessage({
-                      id: 'pages.getCaptchaSecondText',
-                      defaultMessage: '获取验证码',
-                    })}`;
-                  }
-                  return intl.formatMessage({
-                    id: 'pages.login.phoneLogin.getVerificationCode',
-                    defaultMessage: '获取验证码',
-                  });
-                }}
-                name="captcha"
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.captcha.required"
-                        defaultMessage="请输入验证码！"
-                      />
+              >
+                <Input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                />
+              </Form.Item>
+              <Button
+                disabled={busy || remaining > 0 || locked > 0}
+                onClick={() =>
+                  run(async () =>
+                    acceptChallenge(
+                      await authService.resend(challenge.challengeId),
                     ),
-                  },
-                ]}
-                onGetCaptcha={async (phone) => {
-                  const result = await getFakeCaptcha({
-                    phone,
-                  });
-                  if (!result) {
-                    return;
-                  }
-                  message.success('获取验证码成功！验证码为：1234');
+                  )
+                }
+              >
+                {t('login.resend', 'Gửi lại mã')}
+                {remaining > 0 && ` (${remaining}s)`}
+              </Button>
+              <Button
+                type="link"
+                disabled={busy}
+                onClick={() => {
+                  setChallenge(undefined);
+                  setError(undefined);
+                  form.resetFields(['code', 'password']);
                 }}
-              />
-            </>
+              >
+                {t('login.back', 'Đổi tài khoản / quay lại')}
+              </Button>
+            </Space>
           )}
-          <div
-            style={{
-              marginBottom: 24,
-            }}
-          >
-            <ProFormCheckbox noStyle name="autoLogin">
-              <FormattedMessage
-                id="pages.login.rememberMe"
-                defaultMessage="自动登录"
-              />
-            </ProFormCheckbox>
-            <Button
-              type="link"
-              style={{
-                float: 'right',
-                padding: 0,
-              }}
-            >
-              <FormattedMessage
-                id="pages.login.forgotPassword"
-                defaultMessage="忘记密码"
-              />
-            </Button>
-          </div>
         </LoginForm>
       </div>
       <Footer />
     </div>
   );
-};
-
-export default Login;
+}

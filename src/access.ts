@@ -1,11 +1,6 @@
-/**
- * @see https://umijs.org/docs/max/access#access
- * */
+import type { User } from './skygo/types';
 export default function access(
-  initialState: { currentUser?: API.CurrentUser } | undefined,
+  initialState: { currentUser?: User } | undefined,
 ) {
-  const { currentUser } = initialState ?? {};
-  return {
-    canAdmin: currentUser && currentUser.access === 'admin',
-  };
+  return { canAdmin: initialState?.currentUser?.role === 'ADMIN' };
 }

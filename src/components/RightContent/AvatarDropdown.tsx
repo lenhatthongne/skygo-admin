@@ -1,13 +1,9 @@
-import {
-  LogoutOutlined,
-  SettingOutlined,
-  SkinOutlined,
-} from '@ant-design/icons';
+import { LogoutOutlined, SkinOutlined } from '@ant-design/icons';
 import { history, useModel } from '@umijs/max';
 import type { MenuProps } from 'antd';
 import { Spin } from 'antd';
 import React, { startTransition } from 'react';
-import { outLogin } from '@/services/ant-design-pro/api';
+import { clearSession } from '@/skygo/session';
 import HeaderDropdown from '../HeaderDropdown';
 
 type GlobalHeaderRightProps = {
@@ -16,14 +12,9 @@ type GlobalHeaderRightProps = {
 
 const menuItems: MenuProps['items'] = [
   {
-    key: 'settings',
-    icon: <SettingOutlined />,
-    label: '个人设置',
-  },
-  {
     key: 'theme',
     icon: <SkinOutlined />,
-    label: '主题设置',
+    label: 'Giao diện',
   },
   {
     type: 'divider' as const,
@@ -31,28 +22,13 @@ const menuItems: MenuProps['items'] = [
   {
     key: 'logout',
     icon: <LogoutOutlined />,
-    label: '退出登录',
+    label: 'Đăng xuất',
   },
 ];
 
-const loginOut = async () => {
-  try {
-    await outLogin();
-  } catch {
-    // Local logout has already cleared user state; redirect should still proceed.
-  }
-  const { search, pathname } = window.location;
-  const urlParams = new URL(window.location.href).searchParams;
-  const searchParams = new URLSearchParams({
-    redirect: pathname + search,
-  });
-  const redirect = urlParams.get('redirect');
-  if (window.location.pathname !== '/user/login' && !redirect) {
-    history.replace({
-      pathname: '/user/login',
-      search: searchParams.toString(),
-    });
-  }
+const loginOut = () => {
+  clearSession();
+  window.location.replace('/user/login');
 };
 
 export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({
