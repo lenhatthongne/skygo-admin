@@ -12,9 +12,9 @@ export function MenuBadge({
 }) {
   const { value } = useOverview();
   const count =
-    path === '/support'
+    path === '/ops/support'
       ? value?.supportWaiting
-      : path === '/cancellations'
+      : path === '/ops/cancellations'
         ? value?.cancelRequests
         : 0;
   if (!count) return <>{children}</>;

@@ -57,3 +57,6 @@ requestRecord.mock.js
 e2e-out
 # Isolated development assets
 .dev-dist/
+
+# Local overrides (e.g. SKYGO_API_BASE_URL)
+.env.local

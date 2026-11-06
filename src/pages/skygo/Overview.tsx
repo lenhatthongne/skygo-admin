@@ -40,28 +40,28 @@ export default function Overview() {
           icon: <StopOutlined />,
           count: value.cancelRequests,
           label: t('overview.cancel', 'Yêu cầu hủy chờ duyệt'),
-          to: '/cancellations',
+          to: '/ops/cancellations',
         },
         {
           key: 'support',
           icon: <CustomerServiceOutlined />,
           count: value.supportWaiting,
           label: t('overview.support', 'Hội thoại chờ trả lời'),
-          to: '/support',
+          to: '/ops/support',
         },
         {
           key: 'pending',
           icon: <ClockCircleOutlined />,
           count: value.pendingPayment,
           label: t('overview.pending', 'Đơn đang chờ thanh toán'),
-          to: '/bookings?status=PENDING_PAYMENT',
+          to: '/ops/bookings?status=PENDING_PAYMENT',
         },
         {
           key: 'delayed',
           icon: <RocketOutlined />,
           count: value.flightsDelayed,
           label: t('overview.delayed', 'Chuyến bị hoãn chưa bay'),
-          to: '/flights?status=DELAYED',
+          to: '/catalog/flights?status=DELAYED',
         },
       ]
     : [];
@@ -225,7 +225,7 @@ export default function Overview() {
               <Button
                 type="link"
                 style={{ paddingInline: 0, marginTop: 8 }}
-                onClick={() => history.push('/bookings')}
+                onClick={() => history.push('/ops/bookings')}
               >
                 {t('overview.allBookings', 'Xem tất cả đơn')}
               </Button>

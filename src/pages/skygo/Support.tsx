@@ -23,12 +23,18 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { errorText } from '@/requestErrorConfig';
 import { supportService } from '@/skygo/service';
+import {
+  subscribeSupportEvents,
+  useSupportSocketConnected,
+} from '@/skygo/supportSocket';
 import type { SupportMessage, Support as SupportRow } from '@/skygo/types';
 import { Status, time, useText } from '@/skygo/ui';
 import { useStyles } from './Support.style';
 
+// Polling is the fallback: quick while the live connection is down, a safety net while it is up.
 const LIST_POLL_MS = 5000;
 const THREAD_POLL_MS = 4000;
+const LIVE_POLL_MS = 30_000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** Runs `fn` now and then every `ms` while the tab is visible. */
@@ -168,7 +174,16 @@ function Thread({
     }
   }, [id, merge, onChanged]);
 
-  usePolling(() => void fetchNew(), THREAD_POLL_MS);
+  const live = useSupportSocketConnected();
+  usePolling(() => void fetchNew(), live ? LIVE_POLL_MS : THREAD_POLL_MS);
+  // The server says this conversation changed: read it now, not at the next poll.
+  useEffect(
+    () =>
+      subscribeSupportEvents((event) => {
+        if (event.requestId === id) void fetchNew();
+      }),
+    [id, fetchNew],
+  );
 
   // Keep the newest message in view unless the admin scrolled up to read.
   useEffect(() => {
@@ -397,7 +412,10 @@ export default function Support() {
     }
   }, [filter]);
 
-  usePolling(() => void load(), LIST_POLL_MS);
+  const live = useSupportSocketConnected();
+  usePolling(() => void load(), live ? LIVE_POLL_MS : LIST_POLL_MS);
+  // Any change (new message, closed conversation) refreshes the list at once.
+  useEffect(() => subscribeSupportEvents(() => void load()), [load]);
 
   const waiting = rows?.filter((r) => r.status === 'OPEN').length ?? 0;
   const unread = rows?.reduce((sum, r) => sum + r.unread, 0) ?? 0;
